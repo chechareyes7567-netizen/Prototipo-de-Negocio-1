@@ -296,7 +296,7 @@ def app(environ, start_response):
     if origin and origin not in allowlist:
         return response(start_response, '403 Forbidden', {'error': 'Origen no autorizado.'})
     if method == 'OPTIONS' and origin in allowlist:
-        start_response('204 No Content', [*headers, ('Access-Control-Allow-Methods', 'POST, GET, PATCH, OPTIONS'),
+        start_response('204 No Content', [*headers, ('Access-Control-Allow-Methods', 'POST, GET, PATCH, DELETE, OPTIONS'),
                        ('Access-Control-Allow-Headers', 'Content-Type, Authorization'), ('Access-Control-Max-Age', '600')])
         return [b'']
     try:
@@ -334,6 +334,18 @@ def app(environ, start_response):
             finally:
                 conn.close()
             return response(start_response, '200 OK', {'orders': [as_dict(row) for row in rows]}, headers)
+        if path == '/api/admin/orders' and method == 'DELETE':
+            incoming = request_json(environ)
+            if not isinstance(incoming, dict) or incoming.get('confirmation') != 'BORRAR TODOS LOS PEDIDOS':
+                raise ValidationError('Escribe BORRAR TODOS LOS PEDIDOS para confirmar el borrado.')
+            conn = connect()
+            try:
+                ensure_schema(conn)
+                deleted = execute(conn, 'DELETE FROM orders').rowcount
+                conn.commit()
+            finally:
+                conn.close()
+            return response(start_response, '200 OK', {'deleted': deleted}, headers)
         if path == '/api/admin/summary' and method == 'GET':
             conn = connect()
             try:
