@@ -172,12 +172,12 @@
       name: 'Entre Bocados',
       whatsapp: '50241387614', // Guatemala: código 502 + número facilitado por el negocio.
       currency: 'GTQ',
-      // Lista provisional de ejemplo: reemplázala por tus guarniciones reales antes de publicar.
-      sides: ['Arroz','Ensalada','Papas','Frijoles'],
+      // Guarniciones reales para platos secos.
+      sides: ['Arroz','Papas salteadas','Frijol'],
       // Completa los platos reales por horario y día (monday a sunday).
       dailyMenus: {breakfast:{},lunch:{}},
       // Almuerzo provisional visible a diario desde las 11:00 a. m. mientras se publica la rotación.
-      lunchDefault: {name:'Arroz con pollo',description:'Arroz con pollo.',price:30,emoji:'🍛'},
+      lunchDefault: {name:'Arroz con pollo',description:'Elige 2 guarniciones para acompañar tu plato.',price:30,emoji:'🍛',kind:'seco'},
       // Una fecha especial puede indicar breakfast y/o lunch.
       menuOverrides: {},
       breakfastPhotos: [
@@ -230,7 +230,8 @@
     const dailyKey=()=>{const d=guatemalaParts();return `${d.year}-${d.month}-${d.day}`};
     const activePeriod=()=>Number(guatemalaParts().hour)<11?'breakfast':'lunch';
     function dailyProduct(){const day=guatemalaParts();const date=`${day.year}-${day.month}-${day.day}`;const period=activePeriod();const menu=SHOP.menuOverrides[date]?.[period]||SHOP.dailyMenus[period]?.[day.weekday.toLowerCase()]||(period==='lunch'?SHOP.lunchDefault:null);return menu?{...menu,id:'daily-'+date+'-'+period,category:period==='breakfast'?'Desayunos':'Almuerzos'}:null}
-    function productById(id){const daily=dailyProduct();if(daily?.kind==='pollo'&&id.startsWith(daily.id+'::')){try{const sides=id.slice(daily.id.length+2).split('::').map(decodeURIComponent);if(sides.length===2&&new Set(sides).size===2&&sides.every(side=>SHOP.sides.includes(side)))return {...daily,id,selectedSides:sides}}catch{}return null}return [...SHOP.products.filter(p=>Number.isFinite(p.price)),...SHOP.promotions,...(activePeriod()==='breakfast'?SHOP.breakfastProducts:[]),daily].find(p=>p&&p.id===id)}
+    const requiresSides=menu=>menu?.kind==='seco'||menu?.kind==='pollo';
+    function productById(id){const daily=dailyProduct();if(requiresSides(daily)&&id.startsWith(daily.id+'::')){try{const sides=id.slice(daily.id.length+2).split('::').map(decodeURIComponent);if(sides.length===2&&new Set(sides).size===2&&sides.every(side=>SHOP.sides.includes(side)))return {...daily,id,selectedSides:sides}}catch{}return null}return [...SHOP.products.filter(p=>Number.isFinite(p.price)),...SHOP.promotions,...(activePeriod()==='breakfast'?SHOP.breakfastProducts:[]),requiresSides(daily)?null:daily].find(p=>p&&p.id===id)}
     let cart={};try{const saved=JSON.parse(localStorage.getItem('entre-bocados-cart-v2')||'{}');if(saved&&typeof saved==='object'&&!Array.isArray(saved)){for(const [id,qty] of Object.entries(saved)){if(productById(id)&&Number.isInteger(qty)&&qty>0)cart[id]=Math.min(qty,99)}}}catch{}
     let category='Todos';
     const count=()=>Object.values(cart).reduce((sum,n)=>sum+n,0);
@@ -257,12 +258,12 @@
       $('daily-price').textContent=menu?money(menu.price):'';
       const sidesBox=$('daily-sides'),options=$('side-options'),add=$('daily-add');
       options.replaceChildren();
-      sidesBox.hidden=!menu||menu.kind!=='pollo';
+      sidesBox.hidden=!requiresSides(menu);
       add.hidden=!menu;
       if(!menu){add.onclick=null;return}
-      if(menu.kind==='pollo'){
+      if(requiresSides(menu)){
         add.disabled=true;
-        $('side-help').textContent='Selecciona dos opciones para agregar el pollo.';
+        $('side-help').textContent='Selecciona 2 guarniciones distintas para agregar el plato.';
         SHOP.sides.forEach(side=>{
           const label=el('label','side-option'),input=el('input');
           input.type='checkbox';input.value=side;input.name='guarnicion';
