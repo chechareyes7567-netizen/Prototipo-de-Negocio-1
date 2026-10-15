@@ -63,6 +63,7 @@ SMOOTHIES = {
     'smoothie-papaya': ('Licuado de papaya', {'agua': 1200, 'leche': 1500}),
     'smoothie-mango': ('Licuado de mango', {'agua': 1200}),
     'smoothie-pina': ('Licuado de piña', {'agua': 1000}),
+    'smoothie-mixto': ('Licuado de frutas mixtas', {'agua': 1500}),
 }
 SUGAR = {'sin': 'Sin azúcar', 'poca': 'Poca azúcar', 'media': 'Azúcar media', 'mucha': 'Mucha azúcar'}
 SIDES = {'Arroz', 'Papas salteadas', 'Frijol'}
@@ -94,9 +95,13 @@ def product_for(item_id, local_now):
     if len(bits) == 3 and bits[0] in SMOOTHIES:
         base, liquid, sugar = bits
         name, prices = SMOOTHIES[base]
-        if liquid in prices and sugar in SUGAR:
+        valid_sugar = sugar in ('con', 'sin') if base == 'smoothie-mixto' else sugar in SUGAR
+        if liquid in prices and valid_sugar:
+            options = ('Con leche' if liquid == 'leche' else 'Con agua') + ' · ' + ('Con azúcar' if sugar == 'con' else SUGAR[sugar])
+            if base == 'smoothie-mixto':
+                options += ' · Fresa, papaya y piña'
             return {'id': item_id, 'name': name, 'unit_cents': prices[liquid],
-                    'options': ('Con leche' if liquid == 'leche' else 'Con agua') + ' · ' + SUGAR[sugar]}
+                    'options': options}
     if local_now.hour < 11 and len(bits) == 3 and bits[0] == 'des-chapin':
         _, egg, term = bits
         if egg in EGGS and (term in ('bien', 'medio') if egg == 'estrellados' else term == ''):
@@ -136,10 +141,16 @@ def validate_order(data, at=None):
     if site_id not in allowed_sites:
         raise ValidationError('El sitio no está configurado para registrar pedidos.')
     customer = required_str(data, 'customer_name', 80)
-    phone = required_str(data, 'phone', 25)
-    if not re.fullmatch(r'[+() 0-9-]{7,25}', phone):
+    phone = data.get('phone', '')
+    if not isinstance(phone, str) or len(phone.strip()) > 25:
         raise ValidationError('El teléfono no es válido.')
-    order_name = required_str(data, 'order_name', 80)
+    phone = phone.strip()
+    if phone and not re.fullmatch(r'[+() 0-9-]{7,25}', phone):
+        raise ValidationError('El teléfono no es válido.')
+    order_name = data.get('order_name') or customer
+    if not isinstance(order_name, str) or not order_name.strip() or len(order_name.strip()) > 80:
+        raise ValidationError('El nombre del pedido no es válido.')
+    order_name = order_name.strip()
     fulfillment = required_str(data, 'fulfillment', 12)
     if fulfillment not in ('pickup', 'delivery'):
         raise ValidationError('Selecciona una modalidad de entrega.')
@@ -147,8 +158,11 @@ def validate_order(data, at=None):
     if fulfillment == 'delivery':
         address = required_str(data, 'address', 180)
         delivery_time = required_str(data, 'delivery_time', 5)
-        if not re.fullmatch(r'\d{2}:\d{2}', delivery_time) or not '11:00' <= delivery_time <= '17:00':
-            raise ValidationError('La hora de entrega debe estar entre 11:00 y 17:00.')
+        if not re.fullmatch(r'\d{2}:\d{2}', delivery_time):
+            raise ValidationError('La hora de entrega no es válida.')
+        hour, minute = map(int, delivery_time.split(':'))
+        if hour > 23 or minute > 59 or delivery_time < '06:30':
+            raise ValidationError('La hora de entrega debe ser a partir de las 6:30 a. m.')
     payment = required_str(data, 'payment_method', 8)
     if payment not in ('cash', 'transfer'):
         raise ValidationError('Selecciona una forma de pago.')
@@ -273,6 +287,12 @@ def app(environ, start_response):
     method = environ.get('REQUEST_METHOD', 'GET').upper()
     origin = environ.get('HTTP_ORIGIN', '')
     allowlist = {o.strip().rstrip('/') for o in os.getenv('ALLOWED_ORIGINS', '').split(',') if o.strip()}
+    # El panel /admin se sirve desde esta misma API: los navegadores envían 'Origin' en DELETE/PATCH
+    # aunque sean del mismo sitio, así que ese origen propio también es válido.
+    host = environ.get('HTTP_X_FORWARDED_HOST') or environ.get('HTTP_HOST', '')
+    scheme = (environ.get('HTTP_X_FORWARDED_PROTO') or environ.get('wsgi.url_scheme', 'http')).split(',')[0].strip()
+    if host:
+        allowlist.add(scheme + '://' + host.split(',')[0].strip())
     headers = [('Access-Control-Allow-Origin', origin), ('Vary', 'Origin')] if origin in allowlist else []
     if path == '/health' and method == 'GET':
         try:
