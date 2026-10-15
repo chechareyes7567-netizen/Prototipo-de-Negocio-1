@@ -273,12 +273,6 @@ def app(environ, start_response):
     method = environ.get('REQUEST_METHOD', 'GET').upper()
     origin = environ.get('HTTP_ORIGIN', '')
     allowlist = {o.strip().rstrip('/') for o in os.getenv('ALLOWED_ORIGINS', '').split(',') if o.strip()}
-    # El panel /admin se sirve desde esta misma API: los navegadores envían 'Origin' en DELETE/PATCH
-    # aunque sean del mismo sitio, así que ese origen propio también es válido.
-    host = environ.get('HTTP_X_FORWARDED_HOST') or environ.get('HTTP_HOST', '')
-    scheme = (environ.get('HTTP_X_FORWARDED_PROTO') or environ.get('wsgi.url_scheme', 'http')).split(',')[0].strip()
-    if host:
-        allowlist.add(scheme + '://' + host.split(',')[0].strip())
     headers = [('Access-Control-Allow-Origin', origin), ('Vary', 'Origin')] if origin in allowlist else []
     if path == '/health' and method == 'GET':
         try:
